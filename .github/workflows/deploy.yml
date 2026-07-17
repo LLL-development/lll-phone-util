@@ -5,10 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,6 +14,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set trimmed Cloudflare credentials
+        run: |
+          echo "CLOUDFLARE_API_TOKEN=$(printf '%s' "${{ secrets.CLOUDFLARE_API_TOKEN }}" | tr -d '[:space:]')" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_ACCOUNT_ID=$(printf '%s' "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" | tr -d '[:space:]')" >> "$GITHUB_ENV"
 
       - name: Ensure Cloudflare Pages project exists
         run: |
