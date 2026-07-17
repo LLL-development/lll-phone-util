@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>Text to Speech</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>🔊</span> <span data-i18n="textToSpeech.header">Text to Speech</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div id="status" class="status">Type or paste text, choose a language, and tap Speak.</div>
+
+    <div class="field">
+      <label data-i18n="textToSpeech.textLabel">Text</label>
+      <textarea id="input" rows="6" data-i18n-placeholder="textToSpeech.textPlaceholder" placeholder="Type something to hear it read aloud…"></textarea>
+    </div>
+
+    <div class="btn-row">
+      <button id="detectBtn" class="btn secondary" data-i18n="textToSpeech.detectBtn">🔍 Detect Language</button>
+    </div>
+
+    <div class="field">
+      <label data-i18n="textToSpeech.langLabel">Language</label>
+      <select id="ttsLangSelect"></select>
+    </div>
+
+    <div class="btn-row">
+      <button id="speakBtn" class="btn" data-i18n="textToSpeech.speakBtn">▶️ Speak</button>
+      <button id="pauseBtn" class="btn secondary" data-i18n="textToSpeech.pauseBtn">⏸️ Pause</button>
+    </div>
+    <div class="btn-row">
+      <button id="resumeBtn" class="btn secondary" data-i18n="textToSpeech.resumeBtn">⏵ Resume</button>
+      <button id="stopBtn" class="btn danger" data-i18n="textToSpeech.stopBtn">⏹️ Stop</button>
+    </div>
+
+    <div class="panel hint" data-i18n="textToSpeech.hint">
+      Uses the built-in Web Speech Synthesis API. Pick a language (or tap Detect Language to guess it from your text), then tap Speak. Available languages depend on your device and browser.
+    </div>
+  </div>
+</div>
+
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script src="../js/languages.js"></script>
+<script>
+const input = document.getElementById('input');
+const detectBtn = document.getElementById('detectBtn');
+const ttsLangSelect = document.getElementById('ttsLangSelect');
+const speakBtn = document.getElementById('speakBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+
+const TTS_LANG_KEY = 'ptk_tts_lang';
+let statusState = { key: 'textToSpeech.statusInit', cls: '', extra: '' };
+
+function renderStatus() {
+  statusEl.textContent = Ptk.t(statusState.key) + (statusState.extra || '');
+  statusEl.className = 'status' + (statusState.cls ? ' ' + statusState.cls : '');
+}
+
+function setStatus(key, cls, extra) {
+  statusState = { key: key, cls: cls || '', extra: extra || '' };
+  renderStatus();
+}
+
+function populateLangSelect() {
+  const stored = localStorage.getItem(TTS_LANG_KEY);
+  const initial = PtkLanguages.closestMatch(stored || navigator.language);
+  ttsLangSelect.innerHTML = '';
+  PtkLanguages.list.forEach(lang => {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = lang.label;
+    if (lang.code === initial) opt.selected = true;
+    ttsLangSelect.appendChild(opt);
+  });
+}
+
+populateLangSelect();
+
+ttsLangSelect.addEventListener('change', () => {
+  localStorage.setItem(TTS_LANG_KEY, ttsLangSelect.value);
+});
+
+detectBtn.addEventListener('click', () => {
+  const guess = PtkLanguages.detect(input.value);
+  if (!guess) {
+    setStatus('textToSpeech.detectFailed', 'warn');
+    return;
+  }
+  ttsLangSelect.value = guess;
+  localStorage.setItem(TTS_LANG_KEY, guess);
+  const label = PtkLanguages.list.find(l => l.code === guess).label;
+  setStatus('textToSpeech.detected', 'ok', ' ' + label);
+});
+
+if (!('speechSynthesis' in window)) {
+  setStatus('textToSpeech.notSupported', 'warn');
+  speakBtn.disabled = true;
+} else {
+  function pickVoice(langCode) {
+    const voices = speechSynthesis.getVoices();
+    const base = langCode.split('-')[0].toLowerCase();
+    return voices.find(v => v.lang.toLowerCase() === langCode.toLowerCase())
+      || voices.find(v => v.lang.toLowerCase().startsWith(base))
+      || null;
+  }
+
+  speakBtn.addEventListener('click', () => {
+    if (!input.value.trim()) {
+      setStatus('textToSpeech.enterTextFirst', 'warn');
+      return;
+    }
+    speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(input.value);
+    utter.lang = ttsLangSelect.value;
+    const voice = pickVoice(ttsLangSelect.value);
+    if (voice) {
+      utter.voice = voice;
+    } else {
+      setStatus('textToSpeech.noVoiceForLang', 'warn');
+    }
+    utter.onstart = () => setStatus('textToSpeech.speaking', 'ok');
+    utter.onend = () => setStatus('textToSpeech.finished', '');
+    utter.onerror = (e) => setStatus('common.error', 'warn', ' ' + e.error);
+    speechSynthesis.speak(utter);
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    speechSynthesis.pause();
+    setStatus('textToSpeech.paused', '');
+  });
+
+  resumeBtn.addEventListener('click', () => {
+    speechSynthesis.resume();
+    setStatus('textToSpeech.speaking', 'ok');
+  });
+
+  stopBtn.addEventListener('click', () => {
+    speechSynthesis.cancel();
+    setStatus('textToSpeech.stoppedMsg', '');
+  });
+}
+
+document.addEventListener('ptk-lang-changed', renderStatus);
+</script>
+</body>
+</html>

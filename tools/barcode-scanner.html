@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>Barcode Scanner</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>🏷️</span> <span data-i18n="barcodeScanner.header">Barcode Scanner</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div id="status" class="status">Tap "Start Camera" to scan a barcode.</div>
+
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <button id="startBtn" class="btn" data-i18n="barcodeScanner.startBtn">Start Camera</button>
+
+    <div id="resultPanel" class="panel hidden">
+      <label data-i18n="barcodeScanner.resultLabel">Last Detected</label>
+      <div id="resultBox" class="result-box"></div>
+      <div id="formatLabel" class="hint" style="margin-top:6px;"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button id="copyBtn" class="btn secondary" data-i18n="barcodeScanner.copyBtn">Copy</button>
+        <button id="scanAgainBtn" class="btn secondary" data-i18n="barcodeScanner.scanAgainBtn">Scan Again</button>
+      </div>
+    </div>
+
+    <div class="panel hint" data-i18n="barcodeScanner.hint">
+      Uses the browser's native Barcode Detection API — supports EAN-13/8, UPC-A/E, Code128, Code39, ITF, Codabar and QR. Currently available in Chrome for Android and most Chromium browsers; not supported in Safari/iOS or Firefox.
+    </div>
+  </div>
+</div>
+
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script>
+const video = document.getElementById('video');
+const startBtn = document.getElementById('startBtn');
+const statusEl = document.getElementById('status');
+const resultPanel = document.getElementById('resultPanel');
+const resultBox = document.getElementById('resultBox');
+const formatLabel = document.getElementById('formatLabel');
+const copyBtn = document.getElementById('copyBtn');
+const scanAgainBtn = document.getElementById('scanAgainBtn');
+
+let stream = null;
+let scanning = false;
+let rafId = null;
+let detector = null;
+let lastFormat = '';
+let statusState = { key: 'barcodeScanner.statusInit', cls: '', extra: '' };
+
+function renderStatus() {
+  statusEl.textContent = Ptk.t(statusState.key) + (statusState.extra || '');
+  statusEl.className = 'status' + (statusState.cls ? ' ' + statusState.cls : '');
+}
+
+function setStatus(key, cls, extra) {
+  statusState = { key: key, cls: cls || '', extra: extra || '' };
+  renderStatus();
+}
+
+function renderFormat() {
+  formatLabel.textContent = lastFormat ? Ptk.t('barcodeScanner.formatPrefix') + ' ' + lastFormat : '';
+}
+
+const supported = 'BarcodeDetector' in window;
+
+if (!supported) {
+  setStatus('barcodeScanner.notSupported', 'warn');
+  startBtn.disabled = true;
+} else {
+  detector = new BarcodeDetector({
+    formats: ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39', 'codabar', 'itf', 'qr_code']
+  });
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    resultPanel.classList.add('hidden');
+    startBtn.classList.add('hidden');
+    scanning = true;
+    setStatus('barcodeScanner.scanning', 'ok');
+    tick();
+  } catch (err) {
+    setStatus('common.cameraFailed', 'warn', ' ' + err.message);
+  }
+}
+
+async function tick() {
+  if (!scanning) return;
+  try {
+    const barcodes = await detector.detect(video);
+    if (barcodes.length > 0) {
+      onDetected(barcodes[0]);
+      return;
+    }
+  } catch (e) {
+    // transient detection errors are common while the camera warms up
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function onDetected(barcode) {
+  scanning = false;
+  if (navigator.vibrate) navigator.vibrate(120);
+  resultBox.textContent = barcode.rawValue;
+  lastFormat = barcode.format;
+  renderFormat();
+  resultPanel.classList.remove('hidden');
+  setStatus('barcodeScanner.detected', 'ok');
+  stopCamera();
+}
+
+function stopCamera() {
+  if (rafId) cancelAnimationFrame(rafId);
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+}
+
+function handleBackgrounded() {
+  if (!scanning) return;
+  scanning = false;
+  stopCamera();
+  startBtn.classList.remove('hidden');
+  setStatus('barcodeScanner.statusInit', '');
+}
+
+startBtn.addEventListener('click', startCamera);
+
+scanAgainBtn.addEventListener('click', () => {
+  resultPanel.classList.add('hidden');
+  startCamera();
+});
+
+copyBtn.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(resultBox.textContent);
+  setStatus('common.copied', 'ok');
+});
+
+document.addEventListener('visibilitychange', () => { if (document.hidden) handleBackgrounded(); });
+window.addEventListener('pagehide', stopCamera);
+window.addEventListener('beforeunload', stopCamera);
+
+document.addEventListener('ptk-lang-changed', () => { renderStatus(); renderFormat(); });
+</script>
+</body>
+</html>

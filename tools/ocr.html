@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>OCR Image to Text</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>🔤</span> <span data-i18n="ocr.header">OCR Image to Text</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div id="status" class="status">Choose or capture a photo with text.</div>
+
+    <img id="preview" class="preview hidden" />
+
+    <div class="btn-row">
+      <label class="btn secondary" style="margin:0;">
+        <span data-i18n="ocr.takePhoto">📷 Take Photo</span>
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" />
+      </label>
+      <label class="btn secondary" style="margin:0;">
+        <span data-i18n="ocr.chooseImage">🖼️ Choose Image</span>
+        <input id="fileInput" type="file" accept="image/*" class="hidden" />
+      </label>
+    </div>
+
+    <button id="recognizeBtn" class="btn hidden" data-i18n="ocr.extractBtn">Extract Text</button>
+
+    <div class="field">
+      <label data-i18n="ocr.outputLabel">Recognized Text</label>
+      <textarea id="output" rows="8" data-i18n-placeholder="ocr.outputPlaceholder" placeholder="Extracted text will appear here…" readonly></textarea>
+    </div>
+
+    <div class="btn-row">
+      <button id="copyBtn" class="btn secondary" data-i18n="ocr.copyBtn">Copy Text</button>
+      <button id="clearBtn" class="btn secondary" data-i18n="ocr.clearBtn">Clear</button>
+      <button id="shareBtn" class="btn secondary hidden" data-i18n="common.shareBtn">📤 Share</button>
+    </div>
+
+    <div class="panel hint" data-i18n="ocr.hint">
+      Text recognition runs in your browser using Tesseract.js (loaded from a CDN, so an internet connection is required the first time). Works best on clear, well-lit, upright text.
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script>
+const cameraInput = document.getElementById('cameraInput');
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const recognizeBtn = document.getElementById('recognizeBtn');
+const output = document.getElementById('output');
+const statusEl = document.getElementById('status');
+const copyBtn = document.getElementById('copyBtn');
+const clearBtn = document.getElementById('clearBtn');
+const shareBtn = document.getElementById('shareBtn');
+
+let currentFile = null;
+let statusState = { key: 'ocr.statusInit', cls: '', extra: '' };
+
+function renderStatus() {
+  statusEl.textContent = Ptk.t(statusState.key) + (statusState.extra || '');
+  statusEl.className = 'status' + (statusState.cls ? ' ' + statusState.cls : '');
+}
+
+function setStatus(key, cls, extra) {
+  statusState = { key: key, cls: cls || '', extra: extra || '' };
+  renderStatus();
+}
+
+function setRawStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = 'status' + (cls ? ' ' + cls : '');
+  statusState = null;
+}
+
+function handleFile(file) {
+  if (!file) return;
+  currentFile = file;
+  preview.src = URL.createObjectURL(file);
+  preview.classList.remove('hidden');
+  recognizeBtn.classList.remove('hidden');
+  setStatus('ocr.statusReady', 'ok');
+}
+
+cameraInput.addEventListener('change', e => handleFile(e.target.files[0]));
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+recognizeBtn.addEventListener('click', async () => {
+  if (!currentFile || typeof Tesseract === 'undefined') {
+    setStatus('ocr.engineNotLoaded', 'warn');
+    return;
+  }
+  recognizeBtn.disabled = true;
+  output.value = '';
+  try {
+    const result = await Tesseract.recognize(currentFile, 'eng', {
+      logger: m => {
+        if (m.status && typeof m.progress === 'number') {
+          setRawStatus(`${m.status}… ${Math.round(m.progress * 100)}%`);
+        }
+      }
+    });
+    output.value = result.data.text.trim();
+    setStatus('ocr.statusDone', 'ok');
+  } catch (err) {
+    setStatus('ocr.ocrFailed', 'warn', ' ' + err.message);
+  } finally {
+    recognizeBtn.disabled = false;
+  }
+});
+
+copyBtn.addEventListener('click', async () => {
+  if (!output.value) return;
+  await navigator.clipboard.writeText(output.value);
+  setStatus('common.copied', 'ok');
+});
+
+if (navigator.share) {
+  shareBtn.classList.remove('hidden');
+  shareBtn.addEventListener('click', async () => {
+    if (!output.value) return;
+    try {
+      await navigator.share({ text: output.value });
+    } catch (err) {
+      if (err.name !== 'AbortError') setStatus('common.shareFailed', 'warn', ' ' + err.message);
+    }
+  });
+}
+
+clearBtn.addEventListener('click', () => {
+  output.value = '';
+  preview.classList.add('hidden');
+  recognizeBtn.classList.add('hidden');
+  currentFile = null;
+  cameraInput.value = '';
+  fileInput.value = '';
+  setStatus('ocr.statusInit', '');
+});
+
+document.addEventListener('ptk-lang-changed', () => { if (statusState) renderStatus(); });
+</script>
+</body>
+</html>

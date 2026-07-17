@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>Voice to Text</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>🎙️</span> <span data-i18n="voiceToText.header">Voice to Text</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div id="status" class="status">Tap the mic to start speaking.</div>
+
+    <div class="field">
+      <label data-i18n="voiceToText.langLabel">Recognition Language</label>
+      <select id="sttLangSelect"></select>
+    </div>
+
+    <div class="center">
+      <button id="micBtn" class="btn" style="width:110px;height:110px;border-radius:50%;font-size:36px;">🎙️</button>
+    </div>
+
+    <div id="interim" class="hint center"></div>
+
+    <div class="field">
+      <label data-i18n="voiceToText.transcriptLabel">Transcript</label>
+      <textarea id="output" rows="8" data-i18n-placeholder="voiceToText.transcriptPlaceholder" placeholder="Your speech will appear here…"></textarea>
+    </div>
+
+    <div class="btn-row">
+      <button id="copyBtn" class="btn secondary" data-i18n="voiceToText.copyBtn">Copy Text</button>
+      <button id="clearBtn" class="btn secondary" data-i18n="voiceToText.clearBtn">Clear</button>
+      <button id="shareBtn" class="btn secondary hidden" data-i18n="common.shareBtn">📤 Share</button>
+    </div>
+
+    <div class="panel hint" data-i18n="voiceToText.hint">
+      Uses the Web Speech API for continuous, on-the-fly transcription. Best supported in Chrome for Android/Desktop. Safari/iOS support is limited or unavailable.
+    </div>
+  </div>
+</div>
+
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script src="../js/languages.js"></script>
+<script>
+const micBtn = document.getElementById('micBtn');
+const statusEl = document.getElementById('status');
+const output = document.getElementById('output');
+const interim = document.getElementById('interim');
+const copyBtn = document.getElementById('copyBtn');
+const clearBtn = document.getElementById('clearBtn');
+const shareBtn = document.getElementById('shareBtn');
+const sttLangSelect = document.getElementById('sttLangSelect');
+
+const STT_LANG_KEY = 'ptk_stt_lang';
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let listening = false;
+let statusState = { key: 'voiceToText.statusInit', cls: '', extra: '' };
+
+function renderStatus() {
+  statusEl.textContent = Ptk.t(statusState.key) + (statusState.extra || '');
+  statusEl.className = 'status' + (statusState.cls ? ' ' + statusState.cls : '');
+}
+
+function setStatus(key, cls, extra) {
+  statusState = { key: key, cls: cls || '', extra: extra || '' };
+  renderStatus();
+}
+
+function populateLangSelect() {
+  const stored = localStorage.getItem(STT_LANG_KEY);
+  const initial = PtkLanguages.closestMatch(stored || navigator.language);
+  sttLangSelect.innerHTML = '';
+  PtkLanguages.list.forEach(lang => {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = lang.label;
+    if (lang.code === initial) opt.selected = true;
+    sttLangSelect.appendChild(opt);
+  });
+  if (recognition) recognition.lang = initial;
+}
+
+sttLangSelect.addEventListener('change', () => {
+  localStorage.setItem(STT_LANG_KEY, sttLangSelect.value);
+  if (recognition) recognition.lang = sttLangSelect.value;
+});
+
+if (!SpeechRecognition) {
+  setStatus('voiceToText.notSupported', 'warn');
+  micBtn.disabled = true;
+  populateLangSelect();
+  sttLangSelect.disabled = true;
+} else {
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  populateLangSelect();
+
+  recognition.onresult = (event) => {
+    let interimText = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        output.value += (output.value && !output.value.endsWith(' ') ? ' ' : '') + transcript.trim();
+      } else {
+        interimText += transcript;
+      }
+    }
+    interim.textContent = interimText;
+  };
+
+  recognition.onerror = (event) => {
+    setStatus('common.error', 'warn', ' ' + event.error);
+  };
+
+  recognition.onend = () => {
+    listening = false;
+    micBtn.textContent = '🎙️';
+    micBtn.classList.remove('danger');
+    interim.textContent = '';
+    setStatus('voiceToText.stopped', '');
+  };
+
+  micBtn.addEventListener('click', () => {
+    if (listening) {
+      recognition.stop();
+    } else {
+      recognition.start();
+      listening = true;
+      micBtn.textContent = '⏹️';
+      setStatus('voiceToText.listening', 'ok');
+    }
+  });
+}
+
+copyBtn.addEventListener('click', async () => {
+  if (!output.value) return;
+  await navigator.clipboard.writeText(output.value);
+  setStatus('common.copied', 'ok');
+});
+
+if (navigator.share) {
+  shareBtn.classList.remove('hidden');
+  shareBtn.addEventListener('click', async () => {
+    if (!output.value) return;
+    try {
+      await navigator.share({ text: output.value });
+    } catch (err) {
+      if (err.name !== 'AbortError') setStatus('common.shareFailed', 'warn', ' ' + err.message);
+    }
+  });
+}
+
+clearBtn.addEventListener('click', () => {
+  output.value = '';
+  interim.textContent = '';
+});
+
+document.addEventListener('ptk-lang-changed', renderStatus);
+</script>
+</body>
+</html>

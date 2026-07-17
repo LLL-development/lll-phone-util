@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>Camera Mirror</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>🪞</span> <span data-i18n="cameraMirror.header">Camera Mirror</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div id="status" class="status">Tap "Start" for a live mirror view.</div>
+
+    <div class="video-wrap">
+      <video id="video" class="mirror-video" autoplay playsinline muted></video>
+    </div>
+
+    <div class="btn-row">
+      <button id="startBtn" class="btn" data-i18n="cameraMirror.startBtn">Start</button>
+      <button id="switchBtn" class="btn secondary hidden" data-i18n="cameraMirror.switchBtn">🔄 Switch Camera</button>
+    </div>
+
+    <div class="field">
+      <label><span data-i18n="cameraMirror.brightnessLabel">Brightness:</span> <span id="brightVal">100%</span></label>
+      <input id="brightness" type="range" min="60" max="160" step="5" value="100" />
+    </div>
+
+    <div class="field">
+      <label><span data-i18n="cameraMirror.contrastLabel">Contrast:</span> <span id="contrastVal">100%</span></label>
+      <input id="contrast" type="range" min="60" max="160" step="5" value="100" />
+    </div>
+
+    <div class="panel hint" data-i18n="cameraMirror.hint">
+      Live camera feed shown mirrored, like a physical mirror. Adjust brightness/contrast for better visibility. Switch between front and rear cameras if your device has both.
+    </div>
+  </div>
+</div>
+
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script>
+const video = document.getElementById('video');
+const startBtn = document.getElementById('startBtn');
+const switchBtn = document.getElementById('switchBtn');
+const statusEl = document.getElementById('status');
+const brightness = document.getElementById('brightness');
+const contrast = document.getElementById('contrast');
+const brightVal = document.getElementById('brightVal');
+const contrastVal = document.getElementById('contrastVal');
+
+let stream = null;
+let facingMode = 'user';
+let started = false;
+let statusState = { key: 'cameraMirror.statusInit', cls: '', extra: '' };
+
+function renderStatus() {
+  statusEl.textContent = Ptk.t(statusState.key) + (statusState.extra || '');
+  statusEl.className = 'status' + (statusState.cls ? ' ' + statusState.cls : '');
+}
+
+function setStatus(key, cls, extra) {
+  statusState = { key: key, cls: cls || '', extra: extra || '' };
+  renderStatus();
+}
+
+function renderLabels() {
+  startBtn.textContent = Ptk.t(started ? 'cameraMirror.restartBtn' : 'cameraMirror.startBtn');
+}
+
+async function startCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facingMode } },
+      audio: false
+    });
+    video.srcObject = stream;
+    started = true;
+    renderLabels();
+    switchBtn.classList.remove('hidden');
+    setStatus('cameraMirror.active', 'ok');
+  } catch (err) {
+    setStatus('common.cameraFailed', 'warn', ' ' + err.message);
+  }
+}
+
+startBtn.addEventListener('click', startCamera);
+
+switchBtn.addEventListener('click', () => {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  startCamera();
+});
+
+function updateFilter() {
+  video.style.filter = `brightness(${brightness.value}%) contrast(${contrast.value}%)`;
+  brightVal.textContent = brightness.value + '%';
+  contrastVal.textContent = contrast.value + '%';
+}
+
+brightness.addEventListener('input', updateFilter);
+contrast.addEventListener('input', updateFilter);
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+}
+
+function handleBackgrounded() {
+  if (!stream) return;
+  stopCamera();
+  setStatus('cameraMirror.statusInit', '');
+}
+
+document.addEventListener('visibilitychange', () => { if (document.hidden) handleBackgrounded(); });
+window.addEventListener('pagehide', stopCamera);
+window.addEventListener('beforeunload', stopCamera);
+
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  setStatus('common.cameraNotSupported', 'warn');
+  startBtn.disabled = true;
+}
+
+renderLabels();
+document.addEventListener('ptk-lang-changed', () => { renderStatus(); renderLabels(); });
+</script>
+</body>
+</html>

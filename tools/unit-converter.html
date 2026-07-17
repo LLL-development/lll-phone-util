@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>Unit Converter</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>📏</span> <span data-i18n="unitConverter.header">Unit Converter</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div class="field">
+      <label data-i18n="unitConverter.categoryLabel">Category</label>
+      <select id="categorySelect"></select>
+    </div>
+
+    <div class="field">
+      <label data-i18n="unitConverter.valueLabel">Value</label>
+      <input id="valueInput" type="number" inputmode="decimal" value="1" />
+    </div>
+
+    <div class="btn-row" style="align-items:flex-end;">
+      <div class="field" style="flex:1;margin-bottom:0;">
+        <label data-i18n="unitConverter.fromLabel">From</label>
+        <select id="fromSelect"></select>
+      </div>
+      <button id="swapBtn" class="icon-btn" data-i18n-aria="common.swap" aria-label="Swap">🔄</button>
+      <div class="field" style="flex:1;margin-bottom:0;">
+        <label data-i18n="unitConverter.toLabel">To</label>
+        <select id="toSelect"></select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label data-i18n="unitConverter.resultLabel">Result</label>
+      <div id="resultBox" class="result-box">—</div>
+    </div>
+
+    <button id="copyBtn" class="btn secondary" data-i18n="unitConverter.copyBtn">Copy Result</button>
+
+    <div id="status" class="status hidden"></div>
+
+    <div class="panel hint" data-i18n="unitConverter.hint">
+      Converts common units entirely on-device — length, weight, temperature, volume, area, and speed.
+    </div>
+  </div>
+</div>
+
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script>
+const categorySelect = document.getElementById('categorySelect');
+const valueInput = document.getElementById('valueInput');
+const fromSelect = document.getElementById('fromSelect');
+const toSelect = document.getElementById('toSelect');
+const swapBtn = document.getElementById('swapBtn');
+const resultBox = document.getElementById('resultBox');
+const copyBtn = document.getElementById('copyBtn');
+const statusEl = document.getElementById('status');
+
+const CATEGORY_KEYS = ['length', 'weight', 'temperature', 'volume', 'area', 'speed'];
+
+const UNITS = {
+  length: { mm: 0.001, cm: 0.01, m: 1, km: 1000, in: 0.0254, ft: 0.3048, yd: 0.9144, mi: 1609.344 },
+  weight: { mg: 0.000001, g: 0.001, kg: 1, oz: 0.028349523125, lb: 0.45359237, st: 6.35029318, t: 1000 },
+  volume: { ml: 0.001, l: 1, gal: 3.785411784, qt: 0.946352946, pt: 0.473176473, cup: 0.2365882365, floz: 0.0295735295625 },
+  area: { m2: 1, km2: 1000000, ft2: 0.09290304, yd2: 0.83612736, acre: 4046.8564224, ha: 10000 },
+  speed: { mps: 1, kph: 0.27777778, mph: 0.44704, knot: 0.51444444 }
+};
+
+const UNIT_LABELS = {
+  mm: 'mm', cm: 'cm', m: 'm', km: 'km', in: 'in', ft: 'ft', yd: 'yd', mi: 'mi',
+  mg: 'mg', g: 'g', kg: 'kg', oz: 'oz', lb: 'lb', st: 'st', t: 't (metric)',
+  ml: 'ml', l: 'L', gal: 'gal (US)', qt: 'qt (US)', pt: 'pt (US)', cup: 'cup (US)', floz: 'fl oz (US)',
+  m2: 'm²', km2: 'km²', ft2: 'ft²', yd2: 'yd²', acre: 'acre', ha: 'hectare',
+  mps: 'm/s', kph: 'km/h', mph: 'mph', knot: 'knot',
+  C: '°C', F: '°F', K: 'K'
+};
+
+function unitKeysFor(cat) {
+  return cat === 'temperature' ? ['C', 'F', 'K'] : Object.keys(UNITS[cat]);
+}
+
+function populateCategorySelect() {
+  categorySelect.innerHTML = '';
+  CATEGORY_KEYS.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = Ptk.t('unitConverter.categories.' + cat);
+    categorySelect.appendChild(opt);
+  });
+}
+
+function renderCategoryLabels() {
+  Array.from(categorySelect.options).forEach(o => {
+    o.textContent = Ptk.t('unitConverter.categories.' + o.value);
+  });
+}
+
+function populateUnitSelects() {
+  const keys = unitKeysFor(categorySelect.value);
+  fromSelect.innerHTML = '';
+  toSelect.innerHTML = '';
+  keys.forEach(k => {
+    const o1 = document.createElement('option');
+    o1.value = k;
+    o1.textContent = UNIT_LABELS[k] || k;
+    fromSelect.appendChild(o1);
+    toSelect.appendChild(o1.cloneNode(true));
+  });
+  fromSelect.selectedIndex = 0;
+  toSelect.selectedIndex = Math.min(1, keys.length - 1);
+  convert();
+}
+
+function convertTemp(v, from, to) {
+  let c;
+  if (from === 'C') c = v;
+  else if (from === 'F') c = (v - 32) * 5 / 9;
+  else c = v - 273.15;
+  if (to === 'C') return c;
+  if (to === 'F') return c * 9 / 5 + 32;
+  return c + 273.15;
+}
+
+function formatNumber(n) {
+  if (!isFinite(n)) return '—';
+  const rounded = Math.round(n * 1e6) / 1e6;
+  return rounded.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function convert() {
+  const val = parseFloat(valueInput.value);
+  if (isNaN(val)) {
+    resultBox.textContent = '—';
+    return;
+  }
+  const cat = categorySelect.value;
+  let result;
+  if (cat === 'temperature') {
+    result = convertTemp(val, fromSelect.value, toSelect.value);
+  } else {
+    const units = UNITS[cat];
+    const base = val * units[fromSelect.value];
+    result = base / units[toSelect.value];
+  }
+  resultBox.textContent = formatNumber(result);
+}
+
+categorySelect.addEventListener('change', populateUnitSelects);
+valueInput.addEventListener('input', convert);
+fromSelect.addEventListener('change', convert);
+toSelect.addEventListener('change', convert);
+swapBtn.addEventListener('click', () => {
+  const tmp = fromSelect.value;
+  fromSelect.value = toSelect.value;
+  toSelect.value = tmp;
+  convert();
+});
+
+copyBtn.addEventListener('click', async () => {
+  if (resultBox.textContent === '—') return;
+  await navigator.clipboard.writeText(resultBox.textContent);
+  statusEl.textContent = Ptk.t('common.copied');
+  statusEl.className = 'status ok';
+});
+
+populateCategorySelect();
+populateUnitSelects();
+
+document.addEventListener('ptk-lang-changed', renderCategoryLabels);
+</script>
+</body>
+</html>

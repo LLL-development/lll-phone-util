@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>Scan Document</title>
+<script>(function(){try{var t=localStorage.getItem('ptk_theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<link rel="icon" type="image/svg+xml" href="../lllLogo.svg" />
+<link rel="manifest" href="../manifest.json" />
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="tool-header">
+    <a class="back-btn" href="../index.html">←</a>
+    <h2><span>📄</span> <span data-i18n="scanDocument.header">Scan Document</span></h2>
+    <div class="top-controls">
+      <button id="themeToggle" class="icon-btn" data-i18n-aria="common.toggleTheme" aria-label="Toggle theme">🌙</button>
+      <select id="langSelect" class="lang-select" data-i18n-aria="common.language" aria-label="Language"></select>
+    </div>
+  </div>
+
+  <div class="tool-body">
+    <div id="status" class="status">Tap "Start Camera" to begin.</div>
+
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas" class="hidden"></canvas>
+      <img id="preview" class="preview hidden" />
+    </div>
+
+    <div id="liveControls" class="btn-row hidden">
+      <button id="startBtn" class="btn" data-i18n="scanDocument.startBtn">Start Camera</button>
+    </div>
+
+    <div id="captureControls" class="btn-row hidden">
+      <button id="captureBtn" class="btn success" data-i18n="scanDocument.captureBtn">📸 Capture</button>
+    </div>
+
+    <div id="resultControls" class="btn-row hidden">
+      <button id="retakeBtn" class="btn secondary" data-i18n="scanDocument.retakeBtn">Retake</button>
+      <button id="enhanceBtn" class="btn secondary">Enhance: On</button>
+      <button id="downloadBtn" class="btn" data-i18n="scanDocument.downloadBtn">Save Image</button>
+    </div>
+
+    <div class="panel hint" data-i18n="scanDocument.hint">
+      Uses your rear camera to capture a page, then applies a grayscale + contrast "scan" filter. Tap Enhance to toggle the effect, then save the result to your device.
+    </div>
+  </div>
+</div>
+
+<script src="../js/theme.js"></script>
+<script src="../js/i18n.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const preview = document.getElementById('preview');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const captureBtn = document.getElementById('captureBtn');
+const retakeBtn = document.getElementById('retakeBtn');
+const enhanceBtn = document.getElementById('enhanceBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const liveControls = document.getElementById('liveControls');
+const captureControls = document.getElementById('captureControls');
+const resultControls = document.getElementById('resultControls');
+
+let stream = null;
+let enhanced = true;
+let rawImageData = null;
+let statusState = { key: 'scanDocument.statusInit', cls: '', extra: '' };
+
+function renderStatus() {
+  statusEl.textContent = Ptk.t(statusState.key) + (statusState.extra || '');
+  statusEl.className = 'status' + (statusState.cls ? ' ' + statusState.cls : '');
+}
+
+function setStatus(key, cls, extra) {
+  statusState = { key: key, cls: cls || '', extra: extra || '' };
+  renderStatus();
+}
+
+function renderLabels() {
+  enhanceBtn.textContent = Ptk.t(enhanced ? 'scanDocument.enhanceOn' : 'scanDocument.enhanceOff');
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.classList.remove('hidden');
+    preview.classList.add('hidden');
+    liveControls.classList.add('hidden');
+    captureControls.classList.remove('hidden');
+    resultControls.classList.add('hidden');
+    setStatus('scanDocument.statusReady', 'ok');
+  } catch (err) {
+    setStatus('common.cameraFailed', 'warn', ' ' + err.message);
+  }
+}
+
+function applyScanFilter(ctx, w, h) {
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    let v = (gray - 128) * 1.5 + 128 + 20; // contrast + slight brighten
+    v = Math.max(0, Math.min(255, v));
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function capture() {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  rawImageData = ctx.getImageData(0, 0, w, h);
+
+  if (enhanced) applyScanFilter(ctx, w, h);
+
+  preview.src = canvas.toDataURL('image/jpeg', 0.92);
+  preview.classList.remove('hidden');
+  video.classList.add('hidden');
+
+  stopCamera();
+
+  captureControls.classList.add('hidden');
+  resultControls.classList.remove('hidden');
+  setStatus('scanDocument.statusCaptured', 'ok');
+}
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+}
+
+function handleBackgrounded() {
+  if (!stream) return; // nothing live to clean up
+  stopCamera();
+  video.classList.add('hidden');
+  liveControls.classList.remove('hidden');
+  captureControls.classList.add('hidden');
+  setStatus('scanDocument.statusInit', '');
+}
+
+function redraw() {
+  if (!rawImageData) return;
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(rawImageData, 0, 0);
+  if (enhanced) applyScanFilter(ctx, canvas.width, canvas.height);
+  preview.src = canvas.toDataURL('image/jpeg', 0.92);
+}
+
+startBtn.addEventListener('click', startCamera);
+captureBtn.addEventListener('click', capture);
+
+retakeBtn.addEventListener('click', () => {
+  preview.classList.add('hidden');
+  resultControls.classList.add('hidden');
+  rawImageData = null;
+  startCamera();
+});
+
+enhanceBtn.addEventListener('click', () => {
+  enhanced = !enhanced;
+  renderLabels();
+  redraw();
+});
+
+downloadBtn.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/jpeg', 0.95);
+  a.download = 'scanned-document-' + Date.now() + '.jpg';
+  a.click();
+});
+
+document.addEventListener('visibilitychange', () => { if (document.hidden) handleBackgrounded(); });
+window.addEventListener('pagehide', stopCamera);
+window.addEventListener('beforeunload', stopCamera);
+
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  setStatus('common.cameraNotSupported', 'warn');
+} else {
+  liveControls.classList.remove('hidden');
+}
+
+renderLabels();
+document.addEventListener('ptk-lang-changed', () => { renderStatus(); renderLabels(); });
+</script>
+</body>
+</html>
