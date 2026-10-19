@@ -1,0 +1,5 @@
+Run `node --test tests/ocr-security.test.mjs` with jsdom in the test environment, or select an existing installation with `JSDOM_MODULE=/absolute/path/to/jsdom/lib/api.js`.
+
+CodeQL js/xss-through-dom alert 2 was investigated at default HEAD f703840d85aea996a65e8579302efc64f5f3920b, matching its most_recent_instance and analysis 1977355025 (CodeQL 2.27.2). The sink is line 98 `preview.src = URL.createObjectURL(file)`, where preview is the page's `<img>` and sources at 104/105 are input.files[0]. The browser generates an opaque blob URL: neither file names nor HTML strings control the URL syntax. SVG scripts/event handlers are disabled in image context, and OCR progress/errors are assigned with textContent; recognized output is a textarea value. No HTML parsing sink exists on this path.
+
+These tests preserve this boundary. Real Chromium validation additionally loaded a script-bearing SVG as an image (naturalWidth 10), verified no script/onload execution, and retained HTML-looking OCR progress/error/output text without creating image nodes. The finding requires independent false-positive review; no alert was dismissed and the source behavior was preserved.
